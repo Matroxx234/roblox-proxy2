@@ -30,14 +30,14 @@ app.get("/api/username/:username", async (req, res) => {
   }
 });
 
-// 🔁 Récupère les Game Pass > 0 R$ d’un utilisateur
+// 🔁 Récupère les Game Pass > 0 R$ du joueur
 app.get("/api/passes/:userid", async (req, res) => {
   const userId = req.params.userid;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
 
   if (!userId) return res.status(400).json({ error: "No user ID provided" });
 
-  // Anti-spam : 20 req/minute/IP
+  // Anti-abus : 20 requêtes / minute / IP
   const now = Date.now();
   ipRequests[ip] = ipRequests[ip] || [];
   ipRequests[ip] = ipRequests[ip].filter(t => now - t < 60000);
@@ -46,7 +46,7 @@ app.get("/api/passes/:userid", async (req, res) => {
   }
   ipRequests[ip].push(now);
 
-  // Cooldown anti-spam 30s par userId
+  // Cooldown 30s par user
   if (cooldowns[userId] && now - cooldowns[userId] < 30000) {
     return res.status(429).json({ error: "Cooldown - wait 30s" });
   }
@@ -57,32 +57,32 @@ app.get("/api/passes/:userid", async (req, res) => {
   }
 
   try {
-    const page = await axios.get(`https://www.roblox.com/users/${userId}/game-passes`);
-    const html = page.data;
+    // 🔁 Étape 1 : récupérer les jeux de l'utilisateur
+    const gamesRes = await axios.get(`https://games.roblox.com/v2/users/${userId}/games?accessFilter=All&sortOrder=Asc&limit=50`);
+    const games = gamesRes.data.data;
 
-    const regex = /data-pass-id="(\d+)"[\s\S]*?<h3>([^<]+)<\/h3>/g;
     const passes = [];
 
-    let match;
-    while ((match = regex.exec(html)) !== null) {
-      const id = match[1];
-      const name = match[2].trim();
+    for (const game of games) {
+      const universeId = game.id;
 
       try {
-        const priceRes = await axios.get(`https://economy.roblox.com/v1/assets/${id}/details`);
-        const price = priceRes.data.price;
+        const devProductsRes = await axios.get(`https://develop.roblox.com/v1/universes/${universeId}/developer-products?limit=100`);
+        const devProducts = devProductsRes.data;
 
-        if (price > 0) {
-          passes.push({
-            id,
-            name,
-            price,
-            assetType: "GamePass",
-            image: `https://www.roblox.com/thumbs/image?assetId=${id}&width=150&height=150&format=png`
-          });
+        for (const product of devProducts) {
+          if (product.priceInRobux > 0) {
+            passes.push({
+              id: product.productId,
+              name: product.name,
+              price: product.priceInRobux,
+              assetType: "GamePass",
+              image: `https://www.roblox.com/thumbs/image?assetId=${product.productId}&width=150&height=150&format=png`
+            });
+          }
         }
-      } catch (e) {
-        // ignore individual gamepass errors
+      } catch (err) {
+        console.warn("Aucun produit ou accès interdit pour universeId", universeId);
       }
     }
 
@@ -91,12 +91,12 @@ app.get("/api/passes/:userid", async (req, res) => {
     res.json(result);
 
   } catch (err) {
-    console.error("Erreur API:", err.message);
-    res.status(500).json({ error: "Erreur interne" });
+    console.error("Erreur API principale:", err.message);
+    res.status(500).json({ error: "Erreur interne Roblox API" });
   }
 });
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`✅ API active sur le port ${PORT}`);
+  console.log(`✅ API en ligne sur le port ${PORT}`);
 });
