@@ -30,14 +30,13 @@ app.get("/api/username/:username", async (req, res) => {
   }
 });
 
-// 🔁 Récupère les Game Pass > 0 R$ via HTML
+// 🔁 Récupère les Game Pass > 0 R$ d’un utilisateur (via HTML)
 app.get("/api/passes/:userid", async (req, res) => {
   const userId = req.params.userid;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
 
   if (!userId) return res.status(400).json({ error: "No user ID provided" });
 
-  // Anti-spam : 20 requêtes/minute/IP
   const now = Date.now();
   ipRequests[ip] = ipRequests[ip] || [];
   ipRequests[ip] = ipRequests[ip].filter(t => now - t < 60000);
@@ -46,7 +45,6 @@ app.get("/api/passes/:userid", async (req, res) => {
   }
   ipRequests[ip].push(now);
 
-  // Cooldown 30s par utilisateur
   if (cooldowns[userId] && now - cooldowns[userId] < 30000) {
     return res.status(429).json({ error: "Cooldown - wait 30s" });
   }
@@ -57,10 +55,10 @@ app.get("/api/passes/:userid", async (req, res) => {
   }
 
   try {
-    const url = `https://www.roblox.com/users/${userId}/catalog?Category=9&SortType=3`;
+    const url = `https://www.roblox.com/users/${userId}/game-passes`;
     const html = (await axios.get(url)).data;
 
-    const regex = /data-item-id="(\d+)"[\s\S]*?name">([^<]+)<\/a>/g;
+    const regex = /data-pass-id="(\d+)"[\s\S]*?<h3>([^<]+)<\/h3>/g;
     const passes = [];
     let match;
 
@@ -97,5 +95,5 @@ app.get("/api/passes/:userid", async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`✅ API HTML + Prix en ligne sur le port ${PORT}`);
+  console.log(`✅ API HTML GamePass prête sur le port ${PORT}`);
 });
